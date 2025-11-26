@@ -7,8 +7,8 @@ import Link from 'next/link'
 export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false) // Estado para la subida de imagen
   
-  // Estado para todos los campos del perfil
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -17,7 +17,8 @@ export default function ProfilePage() {
     birth_date: '',
     baptism_date: '',
     holy_spirit_date: '',
-    previous_church: ''
+    previous_church: '',
+    avatar_url: '' // Nuevo campo para la foto
   })
 
   const supabase = createClientComponentClient()
@@ -31,8 +32,7 @@ export default function ProfilePage() {
         return
       }
 
-      // Cargar datos actuales
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
@@ -41,13 +41,14 @@ export default function ProfilePage() {
       if (data) {
         setFormData({
           full_name: data.full_name || '',
-          email: data.email || '', // El email usualmente no se edita aquí, pero lo mostramos
+          email: data.email || '',
           phone: data.phone || '',
           address: data.address || '',
           birth_date: data.birth_date || '',
           baptism_date: data.baptism_date || '',
           holy_spirit_date: data.holy_spirit_date || '',
-          previous_church: data.previous_church || ''
+          previous_church: data.previous_church || '',
+          avatar_url: data.avatar_url || ''
         })
       }
       setLoading(false)
@@ -56,10 +57,42 @@ export default function ProfilePage() {
   }, [router, supabase])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    })
+    setFormData({ ...formData, [e.target.name]: e.target.value })
+  }
+
+  // --- FUNCIÓN PARA SUBIR FOTO ---
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true)
+      if (!e.target.files || e.target.files.length === 0) {
+        throw new Error('Por favor selecciona una imagen.')
+      }
+
+      const file = e.target.files[0]
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Math.random()}.${fileExt}` // Nombre único temporal
+      const filePath = `${fileName}`
+
+      // 1. Subir a Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      // 2. Obtener la URL pública
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+      // 3. Actualizar el estado local para ver la foto al instante
+      setFormData({ ...formData, avatar_url: publicUrl })
+
+    } catch (error: any) {
+      alert('Error al subir imagen: ' + error.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -69,17 +102,17 @@ export default function ProfilePage() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
 
-    // Actualizar en Supabase
     const { error } = await supabase
       .from('profiles')
       .update({
         full_name: formData.full_name,
         phone: formData.phone,
         address: formData.address,
-        birth_date: formData.birth_date || null, // Enviar null si está vacío para evitar error de fecha
+        birth_date: formData.birth_date || null,
         baptism_date: formData.baptism_date || null,
         holy_spirit_date: formData.holy_spirit_date || null,
-        previous_church: formData.previous_church
+        previous_church: formData.previous_church,
+        avatar_url: formData.avatar_url // Guardamos la URL de la foto
       })
       .eq('id', session.user.id)
 
@@ -87,7 +120,7 @@ export default function ProfilePage() {
       alert('Error al actualizar: ' + error.message)
     } else {
       alert('¡Perfil actualizado correctamente!')
-      router.push('/') // Volver al inicio
+      router.push('/')
     }
     setSaving(false)
   }
@@ -99,11 +132,47 @@ export default function ProfilePage() {
       <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md overflow-hidden">
         <div className="bg-indigo-600 p-6 text-white flex justify-between items-center">
             <h1 className="text-2xl font-bold">Mi Ficha Personal</h1>
-            <Link href="/" className="text-indigo-200 hover:text-white text-sm">Cancel y Volver</Link>
+            <Link href="/" className="text-indigo-200 hover:text-white text-sm">Cancelar y Volver</Link>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
             
+            {/* --- SECCIÓN FOTO --- */}
+            <div className="flex flex-col items-center justify-center mb-6">
+                <div className="relative w-32 h-32 mb-4">
+                    {/* Imagen o Placeholder */}
+                    {formData.avatar_url ? (
+                        <img 
+                          src={formData.avatar_url} 
+                          alt="Avatar" 
+                          className="w-32 h-32 rounded-full object-cover border-4 border-indigo-100 shadow-sm"
+                        />
+                    ) : (
+                        <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 border-4 border-indigo-50">
+                            <span className="text-4xl">📷</span>
+                        </div>
+                    )}
+                    
+                    {/* Input invisible sobre la foto */}
+                    <label className="absolute bottom-0 right-0 bg-indigo-600 text-white p-2 rounded-full cursor-pointer hover:bg-indigo-700 shadow-md transition-transform hover:scale-110" title="Cambiar foto">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                        </svg>
+                        <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={handleImageUpload} 
+                            disabled={uploading}
+                            className="hidden" 
+                        />
+                    </label>
+                </div>
+                <p className="text-xs text-gray-500">
+                    {uploading ? 'Subiendo...' : 'Toca el ícono de cámara para subir una foto'}
+                </p>
+            </div>
+
             {/* Sección Personal */}
             <div>
                 <h3 className="text-gray-500 text-sm uppercase tracking-wide font-bold mb-3 border-b pb-1">Datos Generales</h3>
@@ -154,7 +223,7 @@ export default function ProfilePage() {
             </div>
 
             <div className="pt-4">
-                <button type="submit" disabled={saving}
+                <button type="submit" disabled={saving || uploading}
                     className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
                     {saving ? 'Guardando...' : 'Guardar Información'}
                 </button>

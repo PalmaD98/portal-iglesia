@@ -4,7 +4,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import jsPDF from 'jspdf'
-import { adLogoBase64 } from '@/app/utils/logos' // <--- IMPORTAMOS EL LOGO
+import { adLogoBase64 } from '@/app/utils/logos'
 
 export default function EventDetails() {
   const [profile, setProfile] = useState<any>(null)
@@ -38,6 +38,7 @@ export default function EventDetails() {
         .single()
       setEvent(eventData)
 
+      // --- CAMBIO 1: Agregamos 'avatar_url' a la consulta ---
       const { data: enrollData } = await supabase
         .from('enrollments')
         .select(`
@@ -46,7 +47,7 @@ export default function EventDetails() {
           grade,
           certified,
           user_id,
-          profiles:user_id ( full_name, email, phone, address, birth_date, baptism_date, holy_spirit_date, previous_church )
+          profiles:user_id ( full_name, email, phone, address, birth_date, baptism_date, holy_spirit_date, previous_church, avatar_url )
         `)
         .eq('event_id', params.id)
       
@@ -56,20 +57,34 @@ export default function EventDetails() {
     getDetails()
   }, [params.id, router, supabase])
 
+  // --- FUNCIÓN AUXILIAR: Convertir URL de foto a formato PDF ---
+  const getImageData = async (url: string) => {
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+    } catch (error) {
+      console.error("Error cargando imagen de perfil", error)
+      return null
+    }
+  }
+
   // --- LÓGICA DE PDF ---
-  const generatePDF = (studentProfile: any, courseName: string, eventDate: string) => {
+  // Ahora es 'async' para poder esperar a que cargue la foto
+  const generatePDF = async (studentProfile: any, courseName: string, eventDate: string) => {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4'
     })
 
-    // --- 1. ENCABEZADO ---
-    // LOGO REAL (Reemplaza al recuadro anterior)
-    // x=10, y=10, ancho=35, alto=40 (ajustado para que no se deforme mucho)
-    doc.addImage(adLogoBase64, 'PNG', 10, 12, 35, 35); 
+    // 1. ENCABEZADO
+    doc.addImage(adLogoBase64, 'JPEG', 10, 12, 35, 35); 
 
-    // Textos del Centro
     doc.setFont("helvetica", "bold")
     doc.setFontSize(16)
     doc.text("TEMPLO EL SEMBRADOR", 105, 20, { align: "center" })
@@ -83,11 +98,32 @@ export default function EventDetails() {
     doc.text("Escuela Dominical", 105, 42, { align: "center" })
     doc.text("Departamento Post-bautismal", 105, 50, { align: "center" })
 
-    // Cuadro para FOTO (Derecha)
+    // --- CAMBIO 2: LÓGICA DE FOTO DEL ALUMNO ---
+    // Recuadro base
+    doc.setDrawColor(0)
     doc.rect(160, 10, 40, 40)
-    doc.text("FOTO", 180, 30, { align: "center" })
+    
+    if (studentProfile.avatar_url) {
+        try {
+            // Intentamos descargar y poner la foto
+            const studentPhoto = await getImageData(studentProfile.avatar_url)
+            if (studentPhoto) {
+                // x=160, y=10, w=40, h=40
+                doc.addImage(studentPhoto, 'JPEG', 160, 10, 40, 40)
+            } else {
+                doc.text("FOTO", 180, 30, { align: "center" })
+            }
+        } catch (e) {
+            // Si falla, dejamos el texto
+            doc.text("FOTO", 180, 30, { align: "center" })
+        }
+    } else {
+        // Si no tiene foto de perfil
+        doc.text("FOTO", 180, 30, { align: "center" })
+    }
+    // ---------------------------------------------
 
-    // --- 2. CAMPOS DE INFORMACIÓN ---
+    // 2. CAMPOS DE INFORMACIÓN
     let y = 65;
     const lineHeight = 12;
     const lineStart = 10;
@@ -108,12 +144,11 @@ export default function EventDetails() {
       y += lineHeight
     }
 
-    // Fecha
     doc.text("Fecha:", 80, 60)
     doc.text(new Date().toLocaleDateString(), 100, 60)
     doc.line(95, 61, 150, 61)
 
-    y = 75 // Reiniciar Y
+    y = 75 
     
     drawField("Nombre del Alumno:", studentProfile.full_name)
     drawField("Fecha de Nacimiento:", studentProfile.birth_date || "")
@@ -123,10 +158,8 @@ export default function EventDetails() {
     drawField("Fecha de Bautismo en el Espiritu Santo:", studentProfile.holy_spirit_date || "")
     drawField("Telefono:", studentProfile.phone || "")
 
-    // --- 3. PIE DE PÁGINA ---
+    // 3. PIE DE PÁGINA
     y += 20
-    
-    // Línea de Firma
     doc.line(70, y, 140, y)
     doc.setFont("helvetica", "bold")
     doc.text("Firma.", 105, y + 5, { align: "center" })
@@ -139,7 +172,6 @@ export default function EventDetails() {
     y += 10
     doc.text("Esperemos que nos acompañe todos los domingos para aprender mas de la palabra del Señor.", lineStart, y)
 
-    // Descargar
     doc.save(`Ficha_${studentProfile.full_name}.pdf`)
   }
 
@@ -171,13 +203,11 @@ export default function EventDetails() {
       <div className="max-w-6xl mx-auto">
         <Link href="/" className="text-indigo-600 hover:underline mb-4 inline-block font-medium">← Volver al Dashboard</Link>
 
-        {/* HEADER SIMPLE */}
         <div className="bg-white rounded-xl shadow p-6 mb-6">
           <h1 className="text-3xl font-bold text-gray-900">{event.title}</h1>
           <p className="text-gray-500">Panel de Gestión y Documentación</p>
         </div>
 
-        {/* TABLA */}
         <div className="bg-white rounded-xl shadow overflow-hidden">
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b">
@@ -197,8 +227,18 @@ export default function EventDetails() {
                 return (
                   <tr key={enrollment.id} className="hover:bg-gray-50">
                     <td className="p-4">
-                      <p className="font-bold text-gray-900">{userName}</p>
-                      <p className="text-xs text-gray-500">{userEmail}</p>
+                      <div className="flex items-center gap-3">
+                        {/* Avatar pequeño en la lista */}
+                        {userProfile?.avatar_url ? (
+                          <img src={userProfile.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">👤</div>
+                        )}
+                        <div>
+                          <p className="font-bold text-gray-900">{userName}</p>
+                          <p className="text-xs text-gray-500">{userEmail}</p>
+                        </div>
+                      </div>
                     </td>
 
                     <td className="p-4 text-center">
