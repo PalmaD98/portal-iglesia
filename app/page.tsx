@@ -9,7 +9,7 @@ export default function Dashboard() {
   const [events, setEvents] = useState<any[]>([])
   const [myEnrollments, setMyEnrollments] = useState<Set<string>>(new Set()) 
   
-  // --- NUEVO ESTADO PARA CERTIFICADOS ---
+  // Estado para el contador de certificados
   const [certificatesCount, setCertificatesCount] = useState(0) 
 
   const [loading, setLoading] = useState(true)
@@ -23,12 +23,14 @@ export default function Dashboard() {
   // --- CARGA INICIAL ---
   useEffect(() => {
     const init = async () => {
+      // 1. Verificar sesión
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         router.push('/login')
         return
       }
 
+      // 2. Cargar Perfil
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
@@ -36,8 +38,9 @@ export default function Dashboard() {
         .single()
       setProfile(profileData)
 
+      // 3. Cargar Datos del Dashboard
       fetchEvents()
-      fetchMyData(session.user.id) // Cambié el nombre para que tenga sentido que trae todo
+      fetchMyData(session.user.id)
       
       setLoading(false)
     }
@@ -59,19 +62,19 @@ export default function Dashboard() {
     }
   }
 
-  // ESTA FUNCIÓN AHORA CALCULA INSCRIPCIONES Y CERTIFICADOS
+  // Trae mis inscripciones y cuenta mis certificados
   const fetchMyData = async (userId: string) => {
     const { data } = await supabase
       .from('enrollments')
-      .select('*') // Traemos TODO para ver si está certificado
+      .select('*')
       .eq('user_id', userId)
     
     if (data) {
-      // 1. Lógica de Inscripciones (para saber en qué eventos estoy)
+      // 1. Saber en qué estoy inscrito
       const enrolledEventIds = new Set(data.map((item: any) => item.event_id))
       setMyEnrollments(enrolledEventIds)
 
-      // 2. Lógica de Certificados (Contamos cuántos true hay)
+      // 2. Contar certificados ganados
       const certs = data.filter((item: any) => item.certified === true).length
       setCertificatesCount(certs)
     }
@@ -88,7 +91,6 @@ export default function Dashboard() {
     if (error) {
       alert('Error: ' + error.message)
     } else {
-      // Recargar datos para actualizar contadores
       fetchMyData(session.user.id)
       fetchEvents() 
       alert('¡Inscripción exitosa!')
@@ -133,11 +135,19 @@ export default function Dashboard() {
           <div className="flex justify-between h-16 items-center">
             <h1 className="text-xl font-bold text-indigo-600">Portal Iglesia</h1>
             <div className="flex items-center gap-4">
+              
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-gray-700">{profile?.full_name}</p>
                 <p className="text-xs text-gray-500 uppercase">{profile?.role === 'admin' ? 'Coordinador' : 'Alumno'}</p>
               </div>
-              <button onClick={handleLogout} className="text-sm text-red-600 hover:bg-red-50 px-3 py-1 rounded border border-red-200">
+
+              {/* --- BOTÓN NUEVO: MI PERFIL --- */}
+              <Link href="/profile" className="text-sm text-gray-600 hover:text-indigo-600 font-medium px-3 py-1 bg-gray-50 hover:bg-indigo-50 rounded transition">
+                Mi Perfil
+              </Link>
+              {/* ----------------------------- */}
+
+              <button onClick={handleLogout} className="text-sm text-red-600 hover:bg-red-50 px-3 py-1 rounded border border-red-200 transition">
                 Salir
               </button>
             </div>
@@ -147,8 +157,9 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         
-        {/* RESUMEN */}
+        {/* RESUMEN (TARJETAS) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          {/* Eventos */}
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500">
             <div className="flex items-center justify-between">
               <div>
@@ -159,6 +170,7 @@ export default function Dashboard() {
             </div>
           </div>
           
+          {/* Inscripciones */}
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
              <div className="flex items-center justify-between">
               <div>
@@ -169,11 +181,11 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Certificados */}
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500">
              <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500 font-medium">Certificados</p>
-                {/* AQUI MOSTRAMOS EL NUEVO CONTADOR */}
                 <h3 className="text-2xl font-bold text-gray-800">{certificatesCount}</h3>
               </div>
               <div className="p-3 bg-yellow-50 rounded-full text-yellow-600">🎓</div>
@@ -181,11 +193,12 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* SECCIÓN DE EVENTOS */}
+        {/* SECCIÓN DE GESTIÓN DE EVENTOS */}
         <div className="border-t pt-8">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-gray-800">Próximos Eventos y Seminarios</h2>
             
+            {/* Botón Crear (Solo Admin) */}
             {profile?.role === 'admin' && (
               <button 
                 onClick={() => setIsCreating(!isCreating)}
@@ -196,6 +209,7 @@ export default function Dashboard() {
             )}
           </div>
 
+          {/* Formulario Crear Evento */}
           {isCreating && (
             <div className="bg-white p-6 rounded-lg shadow-md mb-8 border border-gray-200 animate-fade-in-down">
               <h3 className="text-lg font-bold mb-4 text-gray-700">Nuevo Evento</h3>
@@ -227,6 +241,7 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* LISTA DE EVENTOS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {events.length === 0 ? (
               <p className="text-gray-500 col-span-3 text-center py-10 bg-white rounded-lg border border-dashed">
@@ -235,7 +250,7 @@ export default function Dashboard() {
             ) : (
               events.map((event) => {
                 const isRegistered = myEnrollments.has(event.id);
-                // Extraer conteo seguro
+                // Extraer conteo de manera segura
                 const enrollmentCount = event.enrollments && event.enrollments[0] ? event.enrollments[0].count : 0;
 
                 return (
@@ -249,7 +264,7 @@ export default function Dashboard() {
                          ⏰ {new Date(event.event_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </div>
 
-                      {/* Solo Admin ve el total de inscritos */}
+                      {/* --- LÓGICA DE PRIVACIDAD: Solo Admin ve el conteo --- */}
                       {profile?.role === 'admin' && (
                         <div className="mb-3">
                             <span className="bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded-full border border-blue-100 flex w-fit items-center gap-1">
@@ -265,15 +280,12 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* PIE DE TARJETA CON LÓGICA DE BOTONES */}
                     <div className="bg-gray-50 p-3 border-t text-center">
                       {isRegistered ? (
-                         // Si ya está inscrito, link al ticket/detalle
                          <Link href={`/events/${event.id}`} className="block w-full text-green-600 font-bold text-sm py-2 hover:bg-green-50 rounded transition">
                            ✅ Ya estás inscrito (Ver detalle)
                          </Link>
                       ) : (
-                         // Si NO está inscrito, botón de acción
                          <button 
                            onClick={() => handleSubscribe(event.id)}
                            className="bg-indigo-600 text-white font-medium py-2 px-4 rounded text-sm hover:bg-indigo-700 w-full transition shadow-sm"
@@ -282,7 +294,7 @@ export default function Dashboard() {
                          </button>
                       )}
 
-                      {/* Botón extra para Admin que no se ha inscrito pero quiere gestionar */}
+                      {/* Enlace extra para Admin (aunque no esté inscrito) */}
                       {!isRegistered && profile?.role === 'admin' && (
                          <Link href={`/events/${event.id}`} className="block mt-2 text-xs text-gray-500 hover:text-indigo-600 underline">
                            Administrar evento
