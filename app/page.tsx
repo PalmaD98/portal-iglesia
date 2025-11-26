@@ -8,29 +8,27 @@ export default function Dashboard() {
   const [profile, setProfile] = useState<any>(null)
   const [events, setEvents] = useState<any[]>([])
   const [myEnrollments, setMyEnrollments] = useState<Set<string>>(new Set()) 
-  
-  // Estado para el contador de certificados
   const [certificatesCount, setCertificatesCount] = useState(0) 
-
   const [loading, setLoading] = useState(true)
   const [isCreating, setIsCreating] = useState(false)
   
+  // Datos del formulario para nuevo evento
   const [newEvent, setNewEvent] = useState({ title: '', description: '', date: '', location: '' })
 
   const router = useRouter()
   const supabase = createClientComponentClient()
 
-  // --- CARGA INICIAL ---
+  // --- 1. CARGA INICIAL DE DATOS ---
   useEffect(() => {
     const init = async () => {
-      // 1. Verificar sesión
+      // A. Verificar sesión
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         router.push('/login')
         return
       }
 
-      // 2. Cargar Perfil
+      // B. Cargar Perfil del Usuario
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
@@ -38,8 +36,10 @@ export default function Dashboard() {
         .single()
       setProfile(profileData)
 
-      // 3. Cargar Datos del Dashboard
+      // C. Cargar Eventos y Conteos
       fetchEvents()
+
+      // D. Cargar Mis Inscripciones (Para saber en cuáles ya estoy)
       fetchMyData(session.user.id)
       
       setLoading(false)
@@ -47,9 +47,11 @@ export default function Dashboard() {
     init()
   }, [router, supabase])
 
-  // --- FUNCIONES ---
+  // --- 2. FUNCIONES DE BASE DE DATOS ---
 
+  // Obtener eventos CON el conteo de inscritos
   const fetchEvents = async () => {
+    // AQUÍ ESTÁ LA MAGIA DEL CONTEO: 'enrollments(count)'
     const { data, error } = await supabase
       .from('events')
       .select('*, enrollments(count)') 
@@ -62,7 +64,7 @@ export default function Dashboard() {
     }
   }
 
-  // Trae mis inscripciones y cuenta mis certificados
+  // Obtener la lista de eventos donde YO estoy inscrito y mis certificados
   const fetchMyData = async (userId: string) => {
     const { data } = await supabase
       .from('enrollments')
@@ -70,16 +72,17 @@ export default function Dashboard() {
       .eq('user_id', userId)
     
     if (data) {
-      // 1. Saber en qué estoy inscrito
+      // Mapeamos los resultados a un Set para búsquedas rápidas
       const enrolledEventIds = new Set(data.map((item: any) => item.event_id))
       setMyEnrollments(enrolledEventIds)
 
-      // 2. Contar certificados ganados
+      // Contar certificados ganados
       const certs = data.filter((item: any) => item.certified === true).length
       setCertificatesCount(certs)
     }
   }
 
+  // Acción: Inscribirse a un evento
   const handleSubscribe = async (eventId: string) => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
@@ -91,12 +94,16 @@ export default function Dashboard() {
     if (error) {
       alert('Error: ' + error.message)
     } else {
+      // Actualizar visualmente sin recargar todo
       fetchMyData(session.user.id)
-      fetchEvents() 
+      
+      // Recargar los eventos para que se actualice el contador (+1)
+      fetchEvents()
       alert('¡Inscripción exitosa!')
     }
   }
 
+  // Acción: Crear nuevo evento (Solo Admin)
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault()
     const { error } = await supabase.from('events').insert([
@@ -114,10 +121,11 @@ export default function Dashboard() {
       alert('¡Evento creado exitosamente!')
       setIsCreating(false)
       setNewEvent({ title: '', description: '', date: '', location: '' })
-      fetchEvents() 
+      fetchEvents() // Recargar lista
     }
   }
 
+  // Acción: Salir
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -125,22 +133,21 @@ export default function Dashboard() {
 
   if (loading) return <div className="p-10 text-center text-gray-500">Cargando tu portal...</div>
 
-  // --- RENDERIZADO ---
+  // --- 3. RENDERIZADO (DISEÑO) ---
   return (
     <div className="min-h-screen bg-gray-50">
       
-      {/* NAVBAR */}
+      {/* BARRA SUPERIOR (NAVBAR) */}
       <nav className="bg-white shadow-sm border-b sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <h1 className="text-xl font-bold text-indigo-600">Portal Iglesia</h1>
             <div className="flex items-center gap-4">
-              
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-gray-700">{profile?.full_name}</p>
                 <p className="text-xs text-gray-500 uppercase">{profile?.role === 'admin' ? 'Coordinador' : 'Alumno'}</p>
               </div>
-
+              
               {/* --- BOTÓN NUEVO: MI PERFIL --- */}
               <Link href="/profile" className="text-sm text-gray-600 hover:text-indigo-600 font-medium px-3 py-1 bg-gray-50 hover:bg-indigo-50 rounded transition">
                 Mi Perfil
@@ -157,9 +164,9 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         
-        {/* RESUMEN (TARJETAS) */}
+        {/* SECCIÓN 1: TARJETAS DE RESUMEN */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          {/* Eventos */}
+          {/* Tarjeta Eventos */}
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500">
             <div className="flex items-center justify-between">
               <div>
@@ -170,7 +177,7 @@ export default function Dashboard() {
             </div>
           </div>
           
-          {/* Inscripciones */}
+          {/* Tarjeta Inscripciones */}
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
              <div className="flex items-center justify-between">
               <div>
@@ -181,7 +188,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Certificados */}
+          {/* Tarjeta Certificados */}
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500">
              <div className="flex items-center justify-between">
               <div>
@@ -193,23 +200,31 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* SECCIÓN DE GESTIÓN DE EVENTOS */}
+        {/* SECCIÓN 2: GESTIÓN DE EVENTOS */}
         <div className="border-t pt-8">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-gray-800">Próximos Eventos y Seminarios</h2>
             
-            {/* Botón Crear (Solo Admin) */}
+            {/* Botones solo visibles para ADMIN */}
             {profile?.role === 'admin' && (
-              <button 
-                onClick={() => setIsCreating(!isCreating)}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition shadow-sm text-sm font-medium"
-              >
-                {isCreating ? 'Cancelar' : '+ Crear Evento'}
-              </button>
+              <div className="flex gap-2">
+                  {/* BOTÓN PANEL DE GESTIÓN */}
+                  <Link 
+                    href="/admin/users" 
+                    className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-50 transition shadow-sm text-sm font-medium flex items-center gap-2"
+                  >
+                    👥 Panel de Gestión
+                  </Link>
+
+                  {/* BOTÓN CREAR EVENTO */}
+                  <button onClick={() => setIsCreating(!isCreating)} className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition shadow-sm text-sm font-medium">
+                    {isCreating ? 'Cancelar' : '+ Crear Evento'}
+                  </button>
+              </div>
             )}
           </div>
 
-          {/* Formulario Crear Evento */}
+          {/* Formulario de Creación (Desplegable) */}
           {isCreating && (
             <div className="bg-white p-6 rounded-lg shadow-md mb-8 border border-gray-200 animate-fade-in-down">
               <h3 className="text-lg font-bold mb-4 text-gray-700">Nuevo Evento</h3>
@@ -241,7 +256,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* LISTA DE EVENTOS */}
+          {/* LISTA DE TARJETAS DE EVENTOS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {events.length === 0 ? (
               <p className="text-gray-500 col-span-3 text-center py-10 bg-white rounded-lg border border-dashed">
@@ -250,7 +265,7 @@ export default function Dashboard() {
             ) : (
               events.map((event) => {
                 const isRegistered = myEnrollments.has(event.id);
-                // Extraer conteo de manera segura
+                // Extraer conteo de manera segura. 'enrollments' viene como array de objetos { count: n }
                 const enrollmentCount = event.enrollments && event.enrollments[0] ? event.enrollments[0].count : 0;
 
                 return (
@@ -258,6 +273,7 @@ export default function Dashboard() {
                     <div className={`h-1 transition-colors ${isRegistered ? 'bg-green-500' : 'bg-gray-200 group-hover:bg-indigo-500'}`}></div>
                     <div className="p-5 flex-1">
                       
+                      {/* Fecha y Hora */}
                       <div className="text-xs font-bold text-indigo-600 mb-2 uppercase tracking-wide flex items-center gap-1">
                          📅 {new Date(event.event_date).toLocaleDateString()} 
                          <span className="text-gray-300">|</span> 
@@ -280,24 +296,35 @@ export default function Dashboard() {
                       </div>
                     </div>
 
+                    {/* Botón de Acción */}
                     <div className="bg-gray-50 p-3 border-t text-center">
                       {isRegistered ? (
+                         // Si ya está inscrito, link al ticket/detalle
                          <Link href={`/events/${event.id}`} className="block w-full text-green-600 font-bold text-sm py-2 hover:bg-green-50 rounded transition">
                            ✅ Ya estás inscrito (Ver detalle)
                          </Link>
                       ) : (
-                         <button 
-                           onClick={() => handleSubscribe(event.id)}
-                           className="bg-indigo-600 text-white font-medium py-2 px-4 rounded text-sm hover:bg-indigo-700 w-full transition shadow-sm"
-                         >
-                           Inscribirme ahora
-                         </button>
+                          // AQUI ESTA EL BLOQUEO DE INSCRIPCIÓN
+                          // Si es ADMIN -> Puede inscribirse
+                          // Si es ALUMNO -> Mensaje bloqueado
+                          profile?.role === 'admin' ? (
+                            <button 
+                              onClick={() => handleSubscribe(event.id)}
+                              className="bg-indigo-600 text-white font-medium py-2 px-4 rounded text-sm hover:bg-indigo-700 w-full transition shadow-sm"
+                            >
+                              Inscribirme yo mismo
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-500 italic block py-2 bg-gray-100 rounded">
+                              🔒 Inscripción en oficina
+                            </span>
+                          )
                       )}
 
-                      {/* Enlace extra para Admin (aunque no esté inscrito) */}
+                      {/* Enlace extra para Admin (Gestionar alumnos) */}
                       {!isRegistered && profile?.role === 'admin' && (
                          <Link href={`/events/${event.id}`} className="block mt-2 text-xs text-gray-500 hover:text-indigo-600 underline">
-                           Administrar evento
+                           Administrar inscripciones de alumnos
                          </Link>
                       )}
                     </div>
