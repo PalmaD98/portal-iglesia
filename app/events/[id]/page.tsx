@@ -10,8 +10,8 @@ export default function EventDetails() {
   const [profile, setProfile] = useState<any>(null)
   const [event, setEvent] = useState<any>(null)
   const [enrollments, setEnrollments] = useState<any[]>([])
-  const [allUsers, setAllUsers] = useState<any[]>([]) // Lista de todos los alumnos para inscribir
-  const [selectedUserToEnroll, setSelectedUserToEnroll] = useState('') // ID seleccionado
+  const [allUsers, setAllUsers] = useState<any[]>([])
+  const [selectedUserToEnroll, setSelectedUserToEnroll] = useState('')
   const [loading, setLoading] = useState(true)
   
   const params = useParams()
@@ -23,18 +23,14 @@ export default function EventDetails() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      // 1. Perfil Actual
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       setProfile(profileData)
 
-      // 2. Evento
       const { data: eventData } = await supabase.from('events').select('*').eq('id', params.id).single()
       setEvent(eventData)
 
-      // 3. Inscritos
       fetchEnrollments()
 
-      // 4. Si soy admin, cargar TODOS los usuarios para el selector
       if (profileData.role === 'admin') {
         const { data: allProfiles } = await supabase.from('profiles').select('id, full_name, email').eq('role', 'student')
         setAllUsers(allProfiles || [])
@@ -56,24 +52,39 @@ export default function EventDetails() {
     setEnrollments(enrollData || [])
   }
 
-  // --- FUNCIÓN: ADMIN INSCRIBE A ALUMNO ---
+  // --- ADMIN: INSCRIBIR ALUMNO ---
   const handleAdminEnroll = async () => {
     if (!selectedUserToEnroll) return alert("Selecciona un alumno primero")
-
     const { error } = await supabase.from('enrollments').insert([
         { event_id: params.id, user_id: selectedUserToEnroll }
     ])
-
-    if (error) {
-        alert("Error (¿Quizás ya está inscrito?): " + error.message)
-    } else {
+    if (error) alert("Error: " + error.message)
+    else {
         alert("Alumno inscrito correctamente")
-        fetchEnrollments() // Recargar lista
-        setSelectedUserToEnroll('') // Limpiar selector
+        fetchEnrollments()
+        setSelectedUserToEnroll('')
     }
   }
 
-  // --- LÓGICA DE PDF ---
+  // --- ADMIN: DESINSCRIBIR (ELIMINAR) ALUMNO ---
+  const handleUnsubscribe = async (enrollmentId: string) => {
+    const confirmDelete = window.confirm("¿Estás seguro de querer quitar a este alumno del evento? Se borrarán sus notas y asistencia.")
+    if (!confirmDelete) return
+
+    const { error } = await supabase
+        .from('enrollments')
+        .delete()
+        .eq('id', enrollmentId)
+
+    if (error) {
+        alert("Error al eliminar: " + error.message)
+    } else {
+        // Actualizamos la lista localmente quitando al alumno borrado
+        setEnrollments(prev => prev.filter(item => item.id !== enrollmentId))
+    }
+  }
+
+  // --- PDF ---
   const getImageData = async (url: string) => {
     try {
       const response = await fetch(url)
@@ -89,7 +100,6 @@ export default function EventDetails() {
   const generatePDF = async (studentProfile: any, courseName: string, eventDate: string) => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     
-    // Logo y Encabezado
     doc.addImage(adLogoBase64, 'JPEG', 10, 12, 35, 35); 
     doc.setFont("helvetica", "bold"); doc.setFontSize(16);
     doc.text("TEMPLO EL SEMBRADOR", 105, 20, { align: "center" })
@@ -100,7 +110,6 @@ export default function EventDetails() {
     doc.text("Escuela Dominical", 105, 42, { align: "center" })
     doc.text("Departamento Post-bautismal", 105, 50, { align: "center" })
 
-    // Foto
     doc.setDrawColor(0); doc.rect(160, 10, 40, 40);
     if (studentProfile.avatar_url) {
         try {
@@ -110,7 +119,6 @@ export default function EventDetails() {
         } catch (e) { doc.text("FOTO", 180, 30, { align: "center" }) }
     } else { doc.text("FOTO", 180, 30, { align: "center" }) }
 
-    // Campos
     let y = 65; const lineHeight = 12; const valueX = 60;
     const drawField = (label: string, value: string | null) => {
       doc.setFont("helvetica", "bold"); doc.setFontSize(10);
@@ -130,7 +138,6 @@ export default function EventDetails() {
     drawField("Fecha de Bautismo en el Espiritu Santo:", studentProfile.holy_spirit_date || "");
     drawField("Telefono:", studentProfile.phone || "");
 
-    // Pie
     y += 20; doc.line(70, y, 140, y);
     doc.setFont("helvetica", "bold"); doc.text("Firma.", 105, y + 5, { align: "center" });
     y += 20; doc.setFont("helvetica", "normal"); doc.setFontSize(9);
@@ -138,7 +145,6 @@ export default function EventDetails() {
     doc.save(`Ficha_${studentProfile.full_name}.pdf`);
   }
 
-  // --- ACTIONS ---
   const toggleAttendance = async (id: string, status: boolean) => {
     if (profile?.role !== 'admin') return
     await supabase.from('enrollments').update({ attended: !status }).eq('id', id)
@@ -162,13 +168,11 @@ export default function EventDetails() {
       <div className="max-w-6xl mx-auto">
         <Link href="/" className="text-indigo-600 hover:underline mb-4 inline-block font-medium">← Volver al Dashboard</Link>
 
-        {/* HEADER */}
         <div className="bg-white rounded-xl shadow p-6 mb-6">
           <h1 className="text-3xl font-bold text-gray-900">{event?.title}</h1>
           <p className="text-gray-500">Panel de Gestión</p>
         </div>
 
-        {/* --- PANEL DE INSCRIPCIÓN (SOLO ADMIN) --- */}
         {profile?.role === 'admin' && (
             <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg mb-6 flex gap-4 items-end">
                 <div className="flex-1">
@@ -184,16 +188,12 @@ export default function EventDetails() {
                         ))}
                     </select>
                 </div>
-                <button 
-                    onClick={handleAdminEnroll}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700 h-10"
-                >
+                <button onClick={handleAdminEnroll} className="bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700 h-10">
                     + Inscribir
                 </button>
             </div>
         )}
 
-        {/* TABLA */}
         <div className="bg-white rounded-xl shadow overflow-hidden">
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b">
@@ -218,7 +218,6 @@ export default function EventDetails() {
                         ) : ( <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">👤</div> )}
                         <div>
                           <p className="font-bold text-gray-900">{userName}</p>
-                          {/* BOTÓN EDITAR PERFIL */}
                           {profile?.role === 'admin' && (
                               <Link href={`/admin/users/${userProfile.id}`} className="text-xs text-indigo-500 hover:underline">
                                   ✏️ Editar Perfil
@@ -240,9 +239,20 @@ export default function EventDetails() {
                     <td className="p-4 text-right">
                        <div className="flex justify-end gap-2 items-center">
                          {profile?.role === 'admin' && (
-                            <button onClick={() => toggleCertify(enrollment.id, enrollment.certified)} className={`text-xs font-bold px-3 py-1 rounded ${enrollment.certified ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                              {enrollment.certified ? 'Aprobado' : 'Aprobar'}
-                            </button>
+                            <>
+                                <button onClick={() => toggleCertify(enrollment.id, enrollment.certified)} className={`text-xs font-bold px-3 py-1 rounded ${enrollment.certified ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  {enrollment.certified ? 'Aprobado' : 'Aprobar'}
+                                </button>
+                                
+                                {/* BOTÓN DE ELIMINAR (NUEVO) */}
+                                <button 
+                                    onClick={() => handleUnsubscribe(enrollment.id)}
+                                    className="text-red-500 hover:bg-red-50 p-1.5 rounded transition"
+                                    title="Desinscribir Alumno"
+                                >
+                                    🗑️
+                                </button>
+                            </>
                          )}
                          {(enrollment.certified || profile?.role === 'admin') && (
                             <button onClick={() => generatePDF(userProfile, event.title, event.event_date)} className="bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded">
