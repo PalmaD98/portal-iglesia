@@ -27,7 +27,7 @@ export default function EventDetails() {
   
   const [currentGrading, setCurrentGrading] = useState<any>(null)
   
-  // Notas (permiten string temporalmente para borrar)
+  // Notas
   const [tempScores, setTempScores] = useState<{
     themes: (number | string)[],
     exams: (number | string)[]
@@ -63,12 +63,24 @@ export default function EventDetails() {
     setLoading(false)
   }
 
+  // --- AQUÍ ESTABA EL DETALLE: AGREGAMOS TODOS LOS CAMPOS FALTANTES ---
   const fetchEnrollments = async () => {
     const { data } = await supabase
       .from('enrollments')
       .select(`
         id, attended, grade, certified, grades_data, attendance_data, user_id,
-        profiles:user_id ( id, full_name, email, phone, address, avatar_url )
+        profiles:user_id ( 
+            id, 
+            full_name, 
+            email, 
+            phone, 
+            address, 
+            avatar_url,
+            birth_date,         
+            previous_church,    
+            baptism_date,       
+            holy_spirit_date    
+        )
       `)
       .eq('event_id', params.id)
       .order('created_at', { ascending: false })
@@ -118,7 +130,6 @@ export default function EventDetails() {
     const savedGrades = enrollment.grades_data || {}
     const savedAttendance = enrollment.attendance_data?.topics || [false, false, false, false, false]
     
-    // Forzar ceros si viene vacío
     const themesData = (savedGrades.themes && savedGrades.themes.length === 5) ? savedGrades.themes : [0,0,0,0,0]
     const examsData = (savedGrades.exams && savedGrades.exams.length === 7) ? savedGrades.exams : [0,0,0,0,0,0,0]
 
@@ -148,7 +159,6 @@ export default function EventDetails() {
 
   const saveAllData = async () => {
     if (!currentGrading) return
-
     const cleanThemes = tempScores.themes.map(n => Number(n) || 0)
     const cleanExams = tempScores.exams.map(n => Number(n) || 0)
     const sumThemes = cleanThemes.reduce((a, b) => a + b, 0)
@@ -205,14 +215,18 @@ export default function EventDetails() {
         else doc.text("FOTO", 180, 30, { align: "center" })
     } else doc.text("FOTO", 180, 30, { align: "center" })
 
+    // CAMPOS DE DATOS (Ahora sí se llenarán)
     let y = 70; const xVal = 60;
     const field = (l: string, v: string) => {
         doc.setFont("helvetica", "bold"); doc.text(l, 10, y);
         doc.setFont("helvetica", "normal"); doc.text(v || '', xVal, y);
         doc.line(xVal - 2, y + 1, 200, y + 1); y += 12;
     }
+    
+    // Fecha actual en el PDF
     doc.text("Fecha:", 80, 60); doc.text(new Date().toLocaleDateString(), 100, 60); doc.line(95, 61, 150, 61);
-    y = 75;
+
+    y = 75; // Reiniciar Y
     field("Nombre del Alumno:", user.full_name);
     field("Fecha de Nacimiento:", user.birth_date);
     field("Dirección:", user.address);
@@ -220,7 +234,11 @@ export default function EventDetails() {
     field("Fecha de Bautismos:", user.baptism_date);
     field("Bautismo Espíritu Santo:", user.holy_spirit_date);
     field("Teléfono:", user.phone);
+    
     y+=20; doc.line(70, y, 140, y); doc.text("Firma", 105, y+5, {align:"center"});
+    
+    y+=20; doc.setFontSize(9);
+    doc.text("El Señor le bendiga y gracias por su información.", 10, y);
     doc.save(`Ficha_${user.full_name}.pdf`)
   }
 
@@ -243,7 +261,9 @@ export default function EventDetails() {
                 <div className="flex gap-2 w-full md:w-auto items-center">
                     <select className="p-2 border rounded text-sm w-64" value={selectedUserToEnroll} onChange={(e) => setSelectedUserToEnroll(e.target.value)}>
                         <option value="">-- Inscripción Rápida --</option>
-                        {availableUsers.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                        {availableUsers.map(u => (
+                            <option key={u.id} value={u.id}>{u.full_name}</option>
+                        ))}
                     </select>
                     <button onClick={handleIndividualEnroll} className="bg-white text-indigo-600 border border-indigo-200 px-3 py-2 rounded font-bold text-sm shadow-sm">+ Agregar</button>
                 </div>
@@ -251,7 +271,7 @@ export default function EventDetails() {
             </div>
         )}
 
-        {/* FILTROS */}
+        {/* --- BARRA DE FILTROS --- */}
         <div className="flex flex-col sm:flex-row gap-4 mb-4 bg-gray-100 p-3 rounded-lg border border-gray-200">
             <div className="flex-1">
                 <input type="text" placeholder="🔍 Buscar alumno por nombre..." className="w-full border p-2 rounded focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -266,8 +286,12 @@ export default function EventDetails() {
             </div>
         </div>
 
-        {/* TABLA */}
+        {/* TABLA PRINCIPAL */}
         <div className="bg-white rounded-xl shadow overflow-hidden">
+          <div className="p-3 bg-gray-50 border-b text-xs font-bold text-gray-500 flex justify-between">
+             <span>Viendo {filteredEnrollments.length} alumnos</span>
+             {filterStatus !== 'all' && <span className="bg-blue-100 text-blue-700 px-2 rounded">Filtro Activo</span>}
+          </div>
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -334,7 +358,7 @@ export default function EventDetails() {
         </div>
       )}
 
-      {/* --- MODAL EVALUACIÓN (CORREGIDO) --- */}
+      {/* --- MODAL EVALUACIÓN --- */}
       {isGradeModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden">
@@ -372,7 +396,6 @@ export default function EventDetails() {
                         <div className="text-right">
                             <span className="block text-xs uppercase font-bold text-indigo-400">Promedio Final</span>
                             <span className="text-4xl font-bold text-indigo-700">
-                                {/* LÓGICA DE CÁLCULO CORREGIDA PARA EVITAR ERROR DE TIPOS */}
                                 {Math.round((
                                     tempScores.themes.map(n => Number(n)||0).reduce((a, b) => a + b, 0) + 
                                     tempScores.exams.map(n => Number(n)||0).reduce((a, b) => a + b, 0)
