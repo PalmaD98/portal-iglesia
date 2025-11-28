@@ -7,7 +7,7 @@ import Link from 'next/link'
 export default function Dashboard() {
   const [profile, setProfile] = useState<any>(null)
   const [events, setEvents] = useState<any[]>([])
-  const [myEnrollments, setMyEnrollments] = useState<Set<string>>(new Set()) 
+  const [myEnrollments, setMyEnrollments] = useState<any[]>([]) // Cambiamos a array para guardar más datos
   const [certificatesCount, setCertificatesCount] = useState(0) 
   const [loading, setLoading] = useState(true)
   const [isCreating, setIsCreating] = useState(false)
@@ -26,6 +26,7 @@ export default function Dashboard() {
         .from('profiles').select('*').eq('id', session.user.id).single()
       setProfile(profileData)
 
+      // Cargar todo si está aprobado
       if (profileData?.approved) {
           fetchEvents()
           fetchMyData(session.user.id)
@@ -44,32 +45,13 @@ export default function Dashboard() {
   }
 
   const fetchMyData = async (userId: string) => {
+    // Traemos TODA la info de la inscripción para saber si está certificado
     const { data } = await supabase.from('enrollments').select('*').eq('user_id', userId)
     if (data) {
-      setMyEnrollments(new Set(data.map((item: any) => item.event_id)))
+      setMyEnrollments(data) // Guardamos el objeto completo
       setCertificatesCount(data.filter((item: any) => item.certified === true).length)
     }
   }
-
-  // --- FUNCIÓN NUEVA: ELIMINAR EVENTO ---
-  const handleDeleteEvent = async (eventId: string) => {
-    const confirmDelete = window.confirm("⚠️ ¿Estás seguro de ELIMINAR este evento?\n\nSe borrarán permanentemente todas las inscripciones, notas y asistencias asociadas.")
-    if (!confirmDelete) return
-
-    const { error } = await supabase
-      .from('events')
-      .delete()
-      .eq('id', eventId)
-
-    if (error) {
-      alert("Error al eliminar: " + error.message)
-    } else {
-      // Actualizar la lista visualmente
-      setEvents(prev => prev.filter(e => e.id !== eventId))
-      alert("Evento eliminado correctamente.")
-    }
-  }
-  // --------------------------------------
 
   const handleSubscribe = async (eventId: string) => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -94,12 +76,18 @@ export default function Dashboard() {
     }
   }
 
+  const handleDeleteEvent = async (eventId: string) => {
+    if(!confirm("¿Eliminar evento?")) return
+    await supabase.from('events').delete().eq('id', eventId)
+    setEvents(prev => prev.filter(e => e.id !== eventId))
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  if (loading) return <div className="p-10 text-center text-gray-500">Cargando tu portal...</div>
+  if (loading) return <div className="p-10 text-center text-gray-500">Cargando...</div>
 
   if (profile && !profile.approved) {
     return (
@@ -107,7 +95,7 @@ export default function Dashboard() {
             <div className="bg-white p-8 rounded-xl shadow-lg max-w-md text-center border-t-4 border-yellow-400">
                 <div className="text-5xl mb-4">⏳</div>
                 <h1 className="text-2xl font-bold text-gray-800 mb-2">Cuenta Pendiente</h1>
-                <p className="text-gray-600 mb-6">Hola <strong>{profile.full_name}</strong>. Necesitas aprobación del Coordinador.</p>
+                <p className="text-gray-600 mb-6">Tu acceso debe ser aprobado por un Coordinador.</p>
                 <button onClick={handleLogout} className="text-indigo-600 font-bold hover:underline">Cerrar Sesión</button>
             </div>
         </div>
@@ -135,6 +123,7 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         
+        {/* RESUMEN */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500">
             <div className="flex items-center justify-between">
@@ -144,7 +133,7 @@ export default function Dashboard() {
           </div>
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
              <div className="flex items-center justify-between">
-              <div><p className="text-sm text-gray-500 font-medium">Mis Inscripciones</p><h3 className="text-2xl font-bold text-gray-800">{myEnrollments.size}</h3></div>
+              <div><p className="text-sm text-gray-500 font-medium">Mis Inscripciones</p><h3 className="text-2xl font-bold text-gray-800">{myEnrollments.length}</h3></div>
               <div className="p-3 bg-green-50 rounded-full text-green-600">✅</div>
             </div>
           </div>
@@ -186,27 +175,26 @@ export default function Dashboard() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {events.length === 0 ? (
-              <p className="text-gray-500 col-span-3 text-center py-10 bg-white rounded-lg border border-dashed">No hay eventos programados aún.</p>
-            ) : (
-              events.map((event) => {
-                const isRegistered = myEnrollments.has(event.id);
-                // Extraer conteo
+            {events.map((event) => {
+                // Buscamos si el usuario tiene una inscripción para este evento
+                const myEnrollment = myEnrollments.find((e: any) => e.event_id === event.id);
+                const isRegistered = !!myEnrollment;
+                const isCertified = myEnrollment?.certified === true;
                 const enrollmentCount = event.enrollments && event.enrollments[0] ? event.enrollments[0].count : 0;
+
+                // --- FILTRO INTELIGENTE ---
+                // Si el alumno ya se graduó de este curso (certified=true) y NO es admin,
+                // ocultamos la tarjeta para que no le estorbe.
+                if (isCertified && profile?.role !== 'admin') {
+                    return null;
+                }
 
                 return (
                   <div key={event.id} className="bg-white rounded-xl shadow-sm border hover:shadow-lg transition overflow-hidden flex flex-col group relative">
                     
-                    {/* BOTÓN ELIMINAR EVENTO (SOLO ADMIN) */}
                     {profile?.role === 'admin' && (
-                        <button 
-                            onClick={() => handleDeleteEvent(event.id)}
-                            className="absolute top-2 right-2 bg-white text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-full shadow-sm z-10 transition"
-                            title="Eliminar Evento"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                            </svg>
+                        <button onClick={() => handleDeleteEvent(event.id)} className="absolute top-2 right-2 bg-white text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-full shadow-sm z-10 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
                         </button>
                     )}
 
@@ -226,9 +214,7 @@ export default function Dashboard() {
                       )}
                       <h3 className="text-lg font-bold text-gray-900 mb-2 leading-tight">{event.title}</h3>
                       <p className="text-gray-600 text-sm mb-4 line-clamp-2">{event.description || 'Sin descripción'}</p>
-                      <div className="flex items-center text-gray-500 text-xs bg-gray-100 p-2 rounded w-fit">
-                        📍 {event.location}
-                      </div>
+                      <div className="flex items-center text-gray-500 text-xs bg-gray-100 p-2 rounded w-fit">📍 {event.location}</div>
                     </div>
                     <div className="bg-gray-50 p-3 border-t text-center">
                       {isRegistered ? (
@@ -237,23 +223,18 @@ export default function Dashboard() {
                          </Link>
                       ) : (
                           profile?.role === 'admin' ? (
-                            <button onClick={() => handleSubscribe(event.id)} className="bg-indigo-600 text-white font-medium py-2 px-4 rounded text-sm hover:bg-indigo-700 w-full transition shadow-sm">
-                              Inscribirme yo mismo
-                            </button>
+                            <button onClick={() => handleSubscribe(event.id)} className="bg-indigo-600 text-white font-medium py-2 px-4 rounded text-sm hover:bg-indigo-700 w-full transition shadow-sm">Inscribirme yo mismo</button>
                           ) : (
                             <span className="text-xs text-gray-500 italic block py-2 bg-gray-100 rounded">🔒 Inscripción en oficina</span>
                           )
                       )}
                       {!isRegistered && profile?.role === 'admin' && (
-                         <Link href={`/events/${event.id}`} className="block mt-2 text-xs text-gray-500 hover:text-indigo-600 underline">
-                           Administrar inscripciones de alumnos
-                         </Link>
+                         <Link href={`/events/${event.id}`} className="block mt-2 text-xs text-gray-500 hover:text-indigo-600 underline">Administrar inscripciones</Link>
                       )}
                     </div>
                   </div>
                 )
-              })
-            )}
+              })}
           </div>
         </div>
       </main>
