@@ -23,19 +23,13 @@ export default function Dashboard() {
       if (!session) { router.push('/login'); return }
 
       const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single()
-      
+        .from('profiles').select('*').eq('id', session.user.id).single()
       setProfile(profileData)
 
-      // SOLO CARGAMOS DATOS SI ESTÁ APROBADO
       if (profileData?.approved) {
           fetchEvents()
           fetchMyData(session.user.id)
       }
-      
       setLoading(false)
     }
     init()
@@ -56,6 +50,26 @@ export default function Dashboard() {
       setCertificatesCount(data.filter((item: any) => item.certified === true).length)
     }
   }
+
+  // --- FUNCIÓN NUEVA: ELIMINAR EVENTO ---
+  const handleDeleteEvent = async (eventId: string) => {
+    const confirmDelete = window.confirm("⚠️ ¿Estás seguro de ELIMINAR este evento?\n\nSe borrarán permanentemente todas las inscripciones, notas y asistencias asociadas.")
+    if (!confirmDelete) return
+
+    const { error } = await supabase
+      .from('events')
+      .delete()
+      .eq('id', eventId)
+
+    if (error) {
+      alert("Error al eliminar: " + error.message)
+    } else {
+      // Actualizar la lista visualmente
+      setEvents(prev => prev.filter(e => e.id !== eventId))
+      alert("Evento eliminado correctamente.")
+    }
+  }
+  // --------------------------------------
 
   const handleSubscribe = async (eventId: string) => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -87,28 +101,19 @@ export default function Dashboard() {
 
   if (loading) return <div className="p-10 text-center text-gray-500">Cargando tu portal...</div>
 
-  // --- PANTALLA DE BLOQUEO (SI NO ESTÁ APROBADO) ---
   if (profile && !profile.approved) {
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg max-w-md text-center border-t-4 border-yellow-400">
                 <div className="text-5xl mb-4">⏳</div>
                 <h1 className="text-2xl font-bold text-gray-800 mb-2">Cuenta Pendiente</h1>
-                <p className="text-gray-600 mb-6">
-                    Hola <strong>{profile.full_name}</strong>. Tu registro ha sido exitoso, pero necesitamos que un Coordinador apruebe tu acceso antes de continuar.
-                </p>
-                <div className="bg-yellow-50 text-yellow-800 p-3 rounded text-sm mb-6">
-                    Por favor contacta a la administración de la iglesia para que activen tu usuario.
-                </div>
-                <button onClick={handleLogout} className="text-indigo-600 font-bold hover:underline">
-                    Cerrar Sesión y volver luego
-                </button>
+                <p className="text-gray-600 mb-6">Hola <strong>{profile.full_name}</strong>. Necesitas aprobación del Coordinador.</p>
+                <button onClick={handleLogout} className="text-indigo-600 font-bold hover:underline">Cerrar Sesión</button>
             </div>
         </div>
     )
   }
 
-  // --- DASHBOARD NORMAL (SI ESTÁ APROBADO) ---
   return (
     <div className="min-h-screen bg-gray-50">
       
@@ -121,12 +126,8 @@ export default function Dashboard() {
                 <p className="text-sm font-bold text-gray-700">{profile?.full_name}</p>
                 <p className="text-xs text-gray-500 uppercase">{profile?.role === 'admin' ? 'Coordinador' : 'Alumno'}</p>
               </div>
-              <Link href="/profile" className="text-sm text-gray-600 hover:text-indigo-600 font-medium px-3 py-1 bg-gray-50 hover:bg-indigo-50 rounded transition">
-                Mi Perfil
-              </Link>
-              <button onClick={handleLogout} className="text-sm text-red-600 hover:bg-red-50 px-3 py-1 rounded border border-red-200 transition">
-                Salir
-              </button>
+              <Link href="/profile" className="text-sm text-gray-600 hover:text-indigo-600 font-medium px-3 py-1 bg-gray-50 hover:bg-indigo-50 rounded transition">Mi Perfil</Link>
+              <button onClick={handleLogout} className="text-sm text-red-600 hover:bg-red-50 px-3 py-1 rounded border border-red-200 transition">Salir</button>
             </div>
           </div>
         </div>
@@ -137,28 +138,19 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-indigo-500">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Eventos Activos</p>
-                <h3 className="text-2xl font-bold text-gray-800">{events.length}</h3>
-              </div>
+              <div><p className="text-sm text-gray-500 font-medium">Eventos Activos</p><h3 className="text-2xl font-bold text-gray-800">{events.length}</h3></div>
               <div className="p-3 bg-indigo-50 rounded-full text-indigo-600">📅</div>
             </div>
           </div>
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
              <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Mis Inscripciones</p>
-                <h3 className="text-2xl font-bold text-gray-800">{myEnrollments.size}</h3>
-              </div>
+              <div><p className="text-sm text-gray-500 font-medium">Mis Inscripciones</p><h3 className="text-2xl font-bold text-gray-800">{myEnrollments.size}</h3></div>
               <div className="p-3 bg-green-50 rounded-full text-green-600">✅</div>
             </div>
           </div>
           <div className="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-500">
              <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Certificados</p>
-                <h3 className="text-2xl font-bold text-gray-800">{certificatesCount}</h3>
-              </div>
+              <div><p className="text-sm text-gray-500 font-medium">Certificados</p><h3 className="text-2xl font-bold text-gray-800">{certificatesCount}</h3></div>
               <div className="p-3 bg-yellow-50 rounded-full text-yellow-600">🎓</div>
             </div>
           </div>
@@ -199,10 +191,25 @@ export default function Dashboard() {
             ) : (
               events.map((event) => {
                 const isRegistered = myEnrollments.has(event.id);
+                // Extraer conteo
                 const enrollmentCount = event.enrollments && event.enrollments[0] ? event.enrollments[0].count : 0;
 
                 return (
-                  <div key={event.id} className="bg-white rounded-xl shadow-sm border hover:shadow-lg transition overflow-hidden flex flex-col group">
+                  <div key={event.id} className="bg-white rounded-xl shadow-sm border hover:shadow-lg transition overflow-hidden flex flex-col group relative">
+                    
+                    {/* BOTÓN ELIMINAR EVENTO (SOLO ADMIN) */}
+                    {profile?.role === 'admin' && (
+                        <button 
+                            onClick={() => handleDeleteEvent(event.id)}
+                            className="absolute top-2 right-2 bg-white text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-full shadow-sm z-10 transition"
+                            title="Eliminar Evento"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                        </button>
+                    )}
+
                     <div className={`h-1 transition-colors ${isRegistered ? 'bg-green-500' : 'bg-gray-200 group-hover:bg-indigo-500'}`}></div>
                     <div className="p-5 flex-1">
                       <div className="text-xs font-bold text-indigo-600 mb-2 uppercase tracking-wide flex items-center gap-1">
