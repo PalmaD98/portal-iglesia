@@ -33,10 +33,10 @@ export default function ProfilePage() {
       if (profile) setFormData(profile)
 
       // 2. Cargar Kárdex (Cursos finalizados o con nota)
-      // Traemos la info del evento cruzada
+      // AHORA INCLUIMOS 'attendance_data' EN LA CONSULTA
       const { data: history } = await supabase
         .from('enrollments')
-        .select('grade, certified, events(title, event_date)')
+        .select('grade, certified, attendance_data, events(title, event_date)')
         .eq('user_id', session.user.id)
         .gt('grade', 0) // Solo traemos los que ya tienen calificación mayor a 0
         .order('created_at', { ascending: false })
@@ -115,23 +115,24 @@ export default function ProfilePage() {
     let y = 75
     // Cabecera Tabla
     doc.setFillColor(230, 230, 230); doc.rect(10, y-5, 190, 8, 'F')
-    doc.setFont("helvetica", "bold"); doc.text("SEMINARIO / MATERIA", 12, y)
-    doc.text("FECHA", 120, y)
-    doc.text("CALIF.", 150, y)
-    doc.text("ESTADO", 175, y)
+    doc.setFont("helvetica", "bold"); 
+    doc.text("SEMINARIO", 12, y)
+    doc.text("ASISTENCIA", 100, y)
+    doc.text("CALIF.", 140, y)
+    doc.text("ESTADO", 170, y)
     
     y += 10
     doc.setFont("helvetica", "normal")
 
     kardex.forEach((item) => {
-        // Título del evento (accediendo a la relación)
         const title = Array.isArray(item.events) ? item.events[0]?.title : item.events?.title;
-        const date = Array.isArray(item.events) ? item.events[0]?.event_date : item.events?.event_date;
+        // Calcular asistencia para el PDF
+        const attendanceCount = item.attendance_data?.topics?.filter((t:any) => t).length || 0;
         
         doc.text(title || "Evento sin nombre", 12, y)
-        doc.text(new Date(date).toLocaleDateString(), 120, y)
-        doc.text(String(item.grade), 155, y)
-        doc.text(item.certified ? "Certificado" : "Cursado", 175, y)
+        doc.text(`${attendanceCount}/5 Temas`, 100, y)
+        doc.text(String(item.grade), 145, y)
+        doc.text(item.certified ? "Certificado" : "Cursado", 170, y)
         
         doc.line(10, y+2, 200, y+2) // Línea separadora
         y += 10
@@ -223,11 +224,23 @@ export default function ProfilePage() {
                     <div className="space-y-3">
                         {kardex.map((item, i) => {
                             const title = Array.isArray(item.events) ? item.events[0]?.title : item.events?.title;
+                            // Calculamos la asistencia para mostrarla
+                            const attendanceCount = item.attendance_data?.topics?.filter((t:any) => t).length || 0;
+
                             return (
                                 <div key={i} className="flex justify-between items-center text-sm border-b border-gray-100 pb-2 last:border-0">
                                     <div>
                                         <p className="font-bold text-gray-800">{title}</p>
-                                        <p className="text-xs text-gray-500">{item.certified ? '✅ Certificado' : '🎓 Cursado'}</p>
+                                        
+                                        <div className="flex flex-col gap-1 mt-1">
+                                            <span className="text-xs text-gray-500">
+                                                {item.certified ? '✅ Certificado' : '🎓 Cursado'}
+                                            </span>
+                                            {/* NUEVO: INDICADOR DE ASISTENCIA */}
+                                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded w-fit">
+                                                Asistencia: {attendanceCount}/5
+                                            </span>
+                                        </div>
                                     </div>
                                     <span className="font-bold text-indigo-600 text-lg">{item.grade}</span>
                                 </div>
